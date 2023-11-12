@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: msa/frontend:v1
+        image: crpisharpdevase.azurecr.io/frontend:v1
         imagePullPolicy: Always
         ports:
         - containerPort: 3000

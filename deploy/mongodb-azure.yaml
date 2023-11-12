@@ -1,17 +1,30 @@
 apiVersion: v1
-kind: Service
+kind: Namespace
 metadata:
-  name: mongo
-  labels:
-    name: mongo
-spec:
-  selector:
-    name: mongo
-  ports:
-  - port: 27017
-    protocol: TCP
-    targetPort: 27017
+  name: mongodb
+
 ---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: azurefile-mongo
+provisioner: file.csi.azure.com # replace with "kubernetes.io/azure-file" if aks version is less than 1.21
+allowVolumeExpansion: true
+mountOptions:
+  - dir_mode=0777
+  - file_mode=0777
+  - uid=0
+  - gid=0
+  - mfsymlinks
+  - cache=strict
+  - actimeo=30
+parameters:
+  skuName: Standard_LRS
+  location: southeastasia
+
+---
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -27,44 +40,70 @@ type: Opaque
 data:
   MONGODB_INITDB_ROOT_PASSWORD: cGFzc3dvcmQK
 ---
+
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mongo
+  namespace: mongodb
 spec:
   selector:
     matchLabels:
-      name: mongo
-  serviceName: "mongo"
+      app: mongodb
+  serviceName: mongodb
   replicas: 1
   template:
     metadata:
       labels:
-        name: mongo
+        app: mongodb
     spec:
       terminationGracePeriodSeconds: 10
       containers:
-      - name: mongo
-        image: mongo
-        ports:
-        - containerPort: 27017
-        envFrom:
-        - configMapRef:
-            name: mongo-config
-        - secretRef:
-            name: mongo-secrets
-        volumeMounts:
-        - name: data-volume
-          mountPath: /data/db
+        - name: mongodb
+          image: mongo:latest
+          command:
+            - mongod
+            - "--bind_ip_all"
+            - "--replSet"
+            - rs0
+          ports:
+          - containerPort: 27017
+          env:
+          - name: MONGODB_INITDB_ROOT_USERNAME
+            value: user
+          - name: MONGODB_INITDB_ROOT_PASSWORD
+            value: cGFzc3dvcmQK
+          # envFrom:
+          # - configMapRef:
+          #     name: mongo-config
+          # - secretRef:
+          #     name: mongo-secrets
+          volumeMounts:
+            - name: vol-azurefile-mongo
+              mountPath: /data/db
   volumeClaimTemplates:
-  - metadata:
-      name: data-volume
-    spec:
-      storageClassName: default
-      accessModes:
-      - "ReadWriteOnce"
-      resources:
-        requests:
-          storage: "1Gi"
+    - metadata:
+        name: vol-azurefile-mongo
+      spec:
+        storageClassName: azurefile-mongo
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
 
+---
 
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: mongodb
+spec:
+  clusterIP: None
+  ports:
+    - name: tcp
+      port: 27017
+      protocol: TCP
+  selector:
+    app: mongodb

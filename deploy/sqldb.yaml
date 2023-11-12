@@ -1,0 +1,113 @@
+apiVersion: v1
+data:
+  azurestorageaccountname: c3RwaXNoYXJwZGV2YXNl
+  azurestorageaccountkey: b1lyRldSbmdWQlhuSzlkZmVuNEZ4Q3hKN0IrTVFRa0tWYUY1K2JMUU9xZFp1UWF1Sk9Td1N2WVhzTjJFV3FCYkYzS0Z1VmE2Q0Q3WitBU3RMOHdxRVE9PQ==
+kind: Secret
+metadata:
+  name: azure-secret
+  namespace: sqlserver-dev
+type: Opaque
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: sqlserver-data
+  labels:
+    usage: sqlserver-data
+spec:
+  storageClassName: azurefile
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  azureFile:
+    secretName: azure-secret
+    secretNamespace: sqlserver-dev
+    shareName: mssql-data
+  mountOptions:
+    - dir_mode=0777
+    - file_mode=0777
+    - uid=1000
+    - gid=1000
+    - mfsymlinks
+    - nobrl
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mssql-data
+  namespace: sqlserver-dev
+spec:
+  storageClassName: azurefile
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+      
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mssql-deployment
+  namespace: sqlserver-dev
+  labels:
+    app: mssql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mssql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mssql
+    spec:
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: mssql
+        image: mcr.microsoft.com/mssql/rhel/server:2019-latest
+        env:
+        - name: MSSQL_PID
+          value: "Developer"
+        - name: ACCEPT_EULA
+          value: "Y"
+        - name: MSSQL_SA_PASSWORD
+          value: SqlServerPassword123!
+        volumeMounts:
+        - name: mssqldb
+          mountPath: /var/opt/mssql
+          subPath: dev
+      volumes:
+      - name: mssqldb
+        persistentVolumeClaim:
+          claimName: mssql-data
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mssql-service-dev
+  namespace: sqlserver-dev
+  labels:
+    app: mssql
+spec:
+  selector:
+    app: mssql
+  ports:
+    - protocol: TCP
+      port: 1433
+      targetPort: 1433
+  type: ClusterIP
+
+---
