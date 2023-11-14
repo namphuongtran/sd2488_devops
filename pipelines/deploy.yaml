@@ -1,8 +1,8 @@
 stages:
-- stage: DeployBE
+- stage: SetupK8s
   jobs:
-  - job: ReleaseBE
-    displayName: Release BE
+  - job: DeployAKS
+    displayName: Installing AKS clusters
     continueOnError: false
     pool:
       vmImage: $(vmImageName)
@@ -32,6 +32,7 @@ stages:
         backendAzureRmStorageAccountName: 'stterrastatenonprodase'
         backendAzureRmContainerName: 'terraform-state'
         backendAzureRmKey: 'terraform.tfstate'
+
     - task: AzureCLI@2
       displayName: 'Install kubelogin on Windows'
       inputs:
@@ -43,7 +44,7 @@ stages:
         enabled: true
 
     - task: Kubernetes@1
-      displayName: 'kubectl show cluster info'
+      displayName: 'Get Cluster info'
       inputs:
         kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
         command: 'cluster-info'
@@ -51,7 +52,7 @@ stages:
         workingDirectory: '$(System.DefaultWorkingDirectory)'
 
     - task: Kubernetes@1
-      displayName: 'kubectl Expose to Azure AD for RBAC'
+      displayName: 'Deploy Azure AD for RBAC'
       inputs:
         kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
         command: apply
@@ -60,7 +61,7 @@ stages:
         workingDirectory: '$(System.DefaultWorkingDirectory)'
 
     - task: Kubernetes@1
-      displayName: 'kubectl Allow MIC and AKS add-ons to access IMDS without being intercepted by NMI'
+      displayName: 'Allowing MIC and AKS add-ons to access IMDS without being intercepted by NMI'
       inputs:
         kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
         command: apply
@@ -69,7 +70,7 @@ stages:
         workingDirectory: '$(System.DefaultWorkingDirectory)'
 
     - task: Kubernetes@1
-      displayName: 'kubectl get all'
+      displayName: 'Get All in AKS clusters'
       inputs:
         kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
         command: get
@@ -77,6 +78,12 @@ stages:
         versionSpec: 1.27.3
         workingDirectory: '$(System.DefaultWorkingDirectory)'
         outputFormat: wide
+
+    - task: HelmInstaller@0
+      displayName: 'Install Helm Chart'
+      inputs:
+        helmVersion: 3.7.2
+        installKubectl: false
 
 - stage: DeployFE
 
