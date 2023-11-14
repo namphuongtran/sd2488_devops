@@ -32,8 +32,26 @@ stages:
         backendAzureRmStorageAccountName: 'stterrastatenonprodase'
         backendAzureRmContainerName: 'terraform-state'
         backendAzureRmKey: 'terraform.tfstate'
+    - task: AzureCLI@2
+      displayName: 'Install kubelogin on Windows'
+      inputs:
+        azureSubscription: 'pisharp'
+        scriptType: ps
+        scriptLocation: inlineScript
+        inlineScript: "# This script downloads kubelogin and puts it in a path for later access        \nmkdir -p .bin\naz aks install-cli --install-location .bin/kubectl  # install kubelogin        \n# get the credentials for the AKS cluster\naz aks get-credentials -n aks-pisharp-dev-ase -g rg-pisharp-dev-ase    \n$env:path += ';C:\\Users\\VssAdministrator\\.azure-kubelogin'\n#magic___^_^___line\n# convert the kubeconfig using the current session\nkubelogin convert-kubeconfig -l azurecli     \n#copy kubelogin executable to Windows directory, as then it will be in the path and available in subsequent tasks:\ncopy C:\\Users\\VssAdministrator\\.azure-kubelogin\\kubelogin.exe c:\\windows\n"
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+        enabled: true
+
+    - task: Kubernetes@1
+      displayName: 'kubectl show cluster info'
+      inputs:
+        kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
+        command: 'cluster-info'
+        versionSpec: 1.22.11
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
 
 - stage: DeployFE
+
   jobs:
   - job: ReleaseFE
     displayName: Release FE
@@ -66,4 +84,4 @@ stages:
         backendAzureRmStorageAccountName: 'stterrastatenonprodase'
         backendAzureRmContainerName: 'terraform-state'
         backendAzureRmKey: 'terraform.tfstate'
-    
+
