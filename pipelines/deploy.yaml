@@ -1,8 +1,8 @@
 stages:
-- stage: DeployBE
+- stage: SetupK8s
   jobs:
-  - job: ReleaseBE
-    displayName: Release BE
+  - job: DeployAKS
+    displayName: Installing AKS clusters
     continueOnError: false
     pool:
       vmImage: $(vmImageName)
@@ -33,7 +33,60 @@ stages:
         backendAzureRmContainerName: 'terraform-state'
         backendAzureRmKey: 'terraform.tfstate'
 
+    - task: AzureCLI@2
+      displayName: 'Install kubelogin on Windows'
+      inputs:
+        azureSubscription: 'pisharp'
+        scriptType: ps
+        scriptLocation: inlineScript
+        inlineScript: "# This script downloads kubelogin and puts it in a path for later access        \nmkdir -p .bin\naz aks install-cli --install-location .bin/kubectl  # install kubelogin        \n# get the credentials for the AKS cluster\naz aks get-credentials -n aks-pisharp-dev-ase -g rg-pisharp-dev-ase    \n$env:path += ';C:\\Users\\VssAdministrator\\.azure-kubelogin'\n#magic___^_^___line\n# convert the kubeconfig using the current session\nkubelogin convert-kubeconfig -l azurecli     \n#copy kubelogin executable to Windows directory, as then it will be in the path and available in subsequent tasks:\ncopy C:\\Users\\VssAdministrator\\.azure-kubelogin\\kubelogin.exe c:\\windows\n"
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+        enabled: true
+
+    - task: Kubernetes@1
+      displayName: 'Get Cluster info'
+      inputs:
+        kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
+        command: 'cluster-info'
+        versionSpec: 1.27.3
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+    - task: Kubernetes@1
+      displayName: 'Deploy Azure AD for RBAC'
+      inputs:
+        kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
+        command: apply
+        arguments: '-f https://raw.githubusercontent.com/Azure/aad-pod-identity/master/deploy/infra/deployment-rbac.yaml'
+        versionSpec: 1.27.3
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+    - task: Kubernetes@1
+      displayName: 'Allowing MIC and AKS add-ons to access IMDS without being intercepted by NMI'
+      inputs:
+        kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
+        command: apply
+        arguments: '-f https://raw.githubusercontent.com/Azure/aad-pod-identity/v1.7.0/deploy/infra/mic-exception.yaml'
+        versionSpec: 1.27.3
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+    - task: Kubernetes@1
+      displayName: 'Get All in AKS clusters'
+      inputs:
+        kubernetesServiceEndpoint: 'aks-pisharp-dev-ase'
+        command: get
+        arguments: all
+        versionSpec: 1.27.3
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+        outputFormat: wide
+
+    - task: HelmInstaller@0
+      displayName: 'Install Helm Chart'
+      inputs:
+        helmVersion: 3.7.2
+        installKubectl: false
+
 - stage: DeployFE
+
   jobs:
   - job: ReleaseFE
     displayName: Release FE
@@ -66,4 +119,4 @@ stages:
         backendAzureRmStorageAccountName: 'stterrastatenonprodase'
         backendAzureRmContainerName: 'terraform-state'
         backendAzureRmKey: 'terraform.tfstate'
-    
+
